@@ -116,7 +116,53 @@ export default function BaseToolbar({
                 Tối giản
               </label>
 
-              <div className="h-px w-full bg-stone-100 my-1 font-bold text-stone-400 uppercase tracking-wider flex items-center gap-2"></div>
+              <div className="h-px w-full bg-stone-100 my-1"></div>
+              <div className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">
+                XEM NHANH
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setHideMales(false);
+                    setHideFemales(false);
+                    setHideDaughters(false);
+                    setHideSons(false);
+                    setHideDaughtersInLaw(false);
+                    setHideSonsInLaw(false);
+                  }}
+                  className="flex-1 px-2 py-1.5 text-xs font-semibold rounded-lg border transition-colors bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100"
+                >
+                  Tất cả
+                </button>
+                <button
+                  onClick={() => {
+                    setHideMales(false);
+                    setHideFemales(false);
+                    setHideDaughters(true);
+                    setHideSons(false);
+                    setHideDaughtersInLaw(true);
+                    setHideSonsInLaw(false);
+                  }}
+                  className="flex-1 px-2 py-1.5 text-xs font-semibold rounded-lg border transition-colors bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                >
+                  Dòng cha
+                </button>
+                <button
+                  onClick={() => {
+                    setHideMales(false);
+                    setHideFemales(false);
+                    setHideDaughters(false);
+                    setHideSons(true);
+                    setHideDaughtersInLaw(false);
+                    setHideSonsInLaw(true);
+                  }}
+                  className="flex-1 px-2 py-1.5 text-xs font-semibold rounded-lg border transition-colors bg-pink-50 text-pink-700 border-pink-200 hover:bg-pink-100"
+                >
+                  Dòng mẹ
+                </button>
+              </div>
+
+              <div className="h-px w-full bg-stone-100 my-1"></div>
               <div className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-1">
                 LỌC DỮ LIỆU
               </div>

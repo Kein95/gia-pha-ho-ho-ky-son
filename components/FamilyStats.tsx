@@ -75,34 +75,57 @@ function StatCard({
   );
 }
 
-// Generation breakdown row
+// Generation breakdown row with gender-stacked bar
 function GenerationRow({
   gen,
-  count,
+  total,
+  male,
+  female,
   max,
   delay,
 }: {
   gen: number;
-  count: number;
+  total: number;
+  male: number;
+  female: number;
   max: number;
   delay: number;
 }) {
-  const pct = max > 0 ? (count / max) * 100 : 0;
+  const malePct = total > 0 ? (male / total) * 100 : 0;
+  const femalePct = total > 0 ? (female / total) * 100 : 0;
+  const maleBarPct = max > 0 ? (male / max) * 100 : 0;
+  const femaleBarPct = max > 0 ? (female / max) * 100 : 0;
+
   return (
     <div className="flex items-center gap-3">
       <span className="text-xs font-bold text-stone-500 w-14 shrink-0">
         Đời {gen}
       </span>
-      <div className="flex-1 h-2 bg-stone-100 rounded-full overflow-hidden">
+      <div className="flex-1 h-3 bg-stone-100 rounded-full overflow-hidden flex">
         <motion.div
           initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
+          animate={{ width: `${maleBarPct}%` }}
           transition={{ duration: 0.6, delay, ease: "easeOut" }}
-          className="h-full bg-amber-400 rounded-full"
+          className="h-full bg-blue-400"
+          title={`Nam: ${male}`}
+        />
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${femaleBarPct}%` }}
+          transition={{ duration: 0.6, delay: delay + 0.1, ease: "easeOut" }}
+          className="h-full bg-pink-400"
+          title={`Nữ: ${female}`}
         />
       </div>
-      <span className="text-sm font-bold text-stone-700 w-8 text-right shrink-0">
-        {count}
+      <span
+        className="text-xs text-stone-500 w-24 text-right shrink-0"
+        title={`Tổng: ${total} | Nam: ${male} (${Math.round(malePct)}%) | Nữ: ${female} (${Math.round(femalePct)}%)`}
+      >
+        <span className="font-bold text-sm text-stone-700">{total}</span>
+        {" "}
+        <span className="text-blue-500">{male}♂</span>
+        {" "}
+        <span className="text-pink-500">{female}♀</span>
       </span>
     </div>
   );
@@ -144,16 +167,27 @@ export default function FamilyStats({
     const married = persons.filter((p) => marriedIds.has(p.id)).length;
     const unmarried = total - married;
 
-    // Generation breakdown
-    const genMap = new Map<number, number>();
+    // Generation breakdown (total + by gender)
+    const genMap = new Map<
+      number,
+      { total: number; male: number; female: number }
+    >();
     persons.forEach((p) => {
       if (p.generation != null) {
-        genMap.set(p.generation, (genMap.get(p.generation) ?? 0) + 1);
+        const entry = genMap.get(p.generation) ?? {
+          total: 0,
+          male: 0,
+          female: 0,
+        };
+        entry.total++;
+        if (p.gender === "male") entry.male++;
+        else if (p.gender === "female") entry.female++;
+        genMap.set(p.generation, entry);
       }
     });
     const generationBreakdown = Array.from(genMap.entries())
       .sort(([a], [b]) => a - b)
-      .map(([gen, count]) => ({ gen, count }));
+      .map(([gen, data]) => ({ gen, ...data }));
 
     return {
       total,
@@ -255,12 +289,25 @@ export default function FamilyStats({
             <Crown className="size-4 text-amber-500" />
             Phân bố theo thế hệ
           </h2>
+          {/* Gender legend for generation bars */}
+          <div className="flex gap-4 mb-4 text-xs text-stone-500">
+            <span className="flex items-center gap-1.5">
+              <span className="size-2.5 rounded-full bg-blue-400 inline-block" />
+              Nam
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="size-2.5 rounded-full bg-pink-400 inline-block" />
+              Nữ
+            </span>
+          </div>
           <div className="space-y-3">
-            {stats.generationBreakdown.map(({ gen, count }, i) => (
+            {stats.generationBreakdown.map(({ gen, total, male, female }, i) => (
               <GenerationRow
                 key={gen}
                 gen={gen}
-                count={count}
+                total={total}
+                male={male}
+                female={female}
                 max={stats.total}
                 delay={0.55 + i * 0.07}
               />
