@@ -18,12 +18,29 @@ export default function DashboardMemberList({
   const [sortOption, setSortOption] = useState("generation_asc");
 
   const [filterOption, setFilterOption] = useState("all");
+  const [generationFilter, setGenerationFilter] = useState("all");
+
+  // Compute available generations for the filter dropdown
+  const availableGenerations = useMemo(() => {
+    const gens = new Set<number>();
+    initialPersons.forEach((p) => {
+      if (p.generation != null) gens.add(p.generation);
+    });
+    return Array.from(gens).sort((a, b) => a - b);
+  }, [initialPersons]);
 
   const filteredPersons = useMemo(() => {
     return initialPersons.filter((person) => {
       const matchesSearch = person.full_name
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
+
+      // Generation filter
+      if (
+        generationFilter !== "all" &&
+        person.generation !== Number(generationFilter)
+      )
+        return false;
 
       let matchesFilter = true;
       switch (filterOption) {
@@ -53,7 +70,7 @@ export default function DashboardMemberList({
 
       return matchesSearch && matchesFilter;
     });
-  }, [initialPersons, searchTerm, filterOption]);
+  }, [initialPersons, searchTerm, filterOption, generationFilter]);
 
   const sortedPersons = useMemo(() => {
     return [...filteredPersons].sort((a, b) => {
@@ -123,6 +140,21 @@ export default function DashboardMemberList({
                   <option value="deceased">Đã mất</option>
                   <option value="first_child">Con trưởng</option>
                 </select>
+                {/* Generation filter */}
+                {availableGenerations.length > 0 && (
+                  <select
+                    className="appearance-none bg-white/90 text-stone-700 w-full sm:w-36 pl-3 pr-8 py-2.5 rounded-xl border border-stone-200/80 shadow-sm focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-500/20 hover:border-amber-300 font-medium text-sm transition-all focus:bg-white"
+                    value={generationFilter}
+                    onChange={(e) => setGenerationFilter(e.target.value)}
+                  >
+                    <option value="all">Tất cả đời</option>
+                    {availableGenerations.map((gen) => (
+                      <option key={gen} value={gen}>
+                        Đời {gen}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
                   <svg
                     className="size-4 text-stone-400"

@@ -23,12 +23,12 @@ created: 2026-03-16
 
 | # | Phase | Status | Progress |
 |---|-------|--------|----------|
-| 1 | [Setup & Branding](phase-01-setup-branding.md) | pending | 0% |
+| 1 | [Setup & Branding](phase-01-setup-branding.md) | in-progress | 30% |
 | 2 | [Gender Enhancement](phase-02-gender-enhancement.md) | completed | 100% |
 | 3 | [Family Photo & Media](phase-03-family-media.md) | pending | 0% |
 | 4 | [Events & Memorial](phase-04-events-memorial.md) | pending | 0% |
 | 5 | [Data Entry & Import](phase-05-data-entry.md) | pending | 0% |
-| 6 | [UI/UX Improvements](phase-06-ui-ux.md) | pending | 0% |
+| 6 | [UI/UX Improvements](phase-06-ui-ux.md) | completed | 100% |
 | 7 | [Testing & Deploy](phase-07-testing-deploy.md) | pending | 0% |
 
 ## Key Dependencies
