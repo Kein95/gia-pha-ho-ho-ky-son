@@ -43,6 +43,9 @@ export default function FamilyTree({
       handleZoomIn,
       handleZoomOut,
       handleResetZoom,
+      handleTouchStart,
+      handleTouchMove,
+      handleTouchEnd,
     },
   } = usePanZoom(containerRef);
 
@@ -222,7 +225,10 @@ export default function FamilyTree({
         onMouseUp={handleMouseUpOrLeave}
         onMouseLeave={handleMouseUpOrLeave}
         onClickCapture={handleClickCapture}
-        onDragStart={(e) => e.preventDefault()} // Prevent browser default dragging of links/images
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onDragStart={(e) => e.preventDefault()}
       >
         {/* We use a style block to inject the CSS logic for the family tree lines */}
         <style
