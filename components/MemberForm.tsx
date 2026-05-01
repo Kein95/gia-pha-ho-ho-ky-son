@@ -1,6 +1,7 @@
 "use client";
 
 import { upsertPerson } from "@/app/actions/relationship";
+import { uploadAvatar } from "@/app/actions/upload-avatar";
 import { Gender, Person } from "@/types";
 import { AnimatePresence, motion, Variants } from "framer-motion";
 import {
@@ -63,7 +64,7 @@ export default function MemberForm({
   const [birthOrder, setBirthOrder] = useState<number | "">(initialData?.birth_order || "");
   const [generation, setGeneration] = useState<number | "">(initialData?.generation || "");
 
-  // Avatar — file upload handled in Phase 5 (Vercel Blob). For now keep existing URL or clear.
+  // Avatar — file upload via Vercel Blob (uploadAvatar server action)
   const [avatarUrl, setAvatarUrl] = useState(initialData?.avatar_url || "");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(initialData?.avatar_url || null);
@@ -177,13 +178,18 @@ export default function MemberForm({
     }
 
     try {
-      // Avatar upload: Phase 5 will handle Vercel Blob.
-      // For now: if a new file is selected, warn but skip upload and keep old URL.
+      // Upload avatar to Vercel Blob if a new file selected
       let finalAvatarUrl = avatarUrl;
       if (avatarFile) {
-        // TODO Phase 5: upload to Vercel Blob and set finalAvatarUrl
-        console.warn("Avatar upload not yet migrated to Vercel Blob (Phase 5). Keeping existing URL.");
-        finalAvatarUrl = avatarUrl; // keep existing
+        const uploadFormData = new FormData();
+        uploadFormData.append("file", avatarFile);
+        const uploadResult = await uploadAvatar(uploadFormData);
+        if (uploadResult.error) {
+          setError(uploadResult.error);
+          setLoading(false);
+          return;
+        }
+        finalAvatarUrl = uploadResult.url ?? avatarUrl;
       }
 
       const result = await upsertPerson({
@@ -420,7 +426,7 @@ export default function MemberForm({
                 </div>
                 <p className="mt-2.5 text-xs text-stone-500 flex items-center gap-1.5">
                   <AlertCircle className="w-3.5 h-3.5 text-stone-400" />
-                  Hỗ trợ PNG, JPG, GIF tối đa 2MB. (Upload sẽ hoàn thiện ở Phase 5)
+                  Hỗ trợ PNG, JPG, GIF, WebP tối đa 2MB.
                 </p>
               </div>
             </div>
