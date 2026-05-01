@@ -1,28 +1,43 @@
 import { DashboardProvider } from "@/components/DashboardContext";
 import EventsList from "@/components/EventsList";
 import MemberDetailModal from "@/components/MemberDetailModal";
-import { getSupabase } from "@/utils/supabase/queries";
+import { db } from "@/lib/db";
+import { persons, customEvents } from "@/lib/db/schema";
 
 export const metadata = {
   title: "Sự kiện gia phả",
 };
 
 export default async function EventsPage() {
-  const supabase = await getSupabase();
-
-  const [personsRes, customEventsRes] = await Promise.all([
-    supabase
-      .from("persons")
-      .select(
-        "id, full_name, birth_year, birth_month, birth_day, death_year, death_month, death_day, death_lunar_year, death_lunar_month, death_lunar_day, is_deceased, avatar_url",
-      ),
-    supabase
-      .from("custom_events")
-      .select("id, name, content, event_date, location, created_by"),
+  const [personsRows, eventsRows] = await Promise.all([
+    db
+      .select({
+        id: persons.id,
+        full_name: persons.fullName,
+        birth_year: persons.birthYear,
+        birth_month: persons.birthMonth,
+        birth_day: persons.birthDay,
+        death_year: persons.deathYear,
+        death_month: persons.deathMonth,
+        death_day: persons.deathDay,
+        death_lunar_year: persons.deathLunarYear,
+        death_lunar_month: persons.deathLunarMonth,
+        death_lunar_day: persons.deathLunarDay,
+        is_deceased: persons.isDeceased,
+        avatar_url: persons.avatarUrl,
+      })
+      .from(persons),
+    db
+      .select({
+        id: customEvents.id,
+        name: customEvents.name,
+        content: customEvents.content,
+        event_date: customEvents.eventDate,
+        location: customEvents.location,
+        created_by: customEvents.createdBy,
+      })
+      .from(customEvents),
   ]);
-
-  const persons = personsRes.data || [];
-  const customEvents = customEventsRes.data || [];
 
   return (
     <DashboardProvider>
@@ -35,14 +50,10 @@ export default async function EventsPage() {
         </div>
 
         <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 w-full flex-1">
-          <EventsList
-            persons={persons ?? []}
-            customEvents={customEvents ?? []}
-          />
+          <EventsList persons={personsRows} customEvents={eventsRows} />
         </main>
       </div>
 
-      {/* Modal for member details when clicking an event card */}
       <MemberDetailModal />
     </DashboardProvider>
   );

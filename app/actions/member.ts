@@ -1,50 +1,38 @@
 "use server";
 
-import { getProfile, getSupabase } from "@/utils/supabase/queries";
+import { db } from "@/lib/db";
+import { persons, relationships } from "@/lib/db/schema";
+import { requireEditor } from "@/lib/auth/permissions";
+import { eq, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 export async function deleteMemberProfile(memberId: string) {
-  const profile = await getProfile();
-  const supabase = await getSupabase();
+  await requireEditor();
 
-  if (profile?.role !== "admin" && profile?.role !== "editor") {
-    return {
-      error: "Từ chối truy cập. Chỉ Admin hoặc Editor mới có quyền xoá hồ sơ.",
-    };
-  }
-
-  // 2. Check for existing relationships
-  const { data: relationships, error: relationshipError } = await supabase
-    .from("relationships")
-    .select("id")
-    .or(`person_a.eq.${memberId},person_b.eq.${memberId}`)
+  // Check for existing relationships first (FK constraint guard)
+  const existingRels = await db
+    .select({ id: relationships.id })
+    .from(relationships)
+    .where(
+      or(eq(relationships.personA, memberId), eq(relationships.personB, memberId)),
+    )
     .limit(1);
 
-  if (relationshipError) {
-    console.error("Error checking relationships:", relationshipError);
-    return { error: "Lỗi kiểm tra mối quan hệ gia đình." };
-  }
-
-  if (relationships && relationships.length > 0) {
+  if (existingRels.length > 0) {
     return {
       error:
         "Không thể xoá. Vui lòng xoá hết các mối quan hệ gia đình của người này trước.",
     };
   }
 
-  // 3. Delete the member
-  const { error: deleteError } = await supabase
-    .from("persons")
-    .delete()
-    .eq("id", memberId);
-
-  if (deleteError) {
-    console.error("Error deleting person:", deleteError);
+  try {
+    await db.delete(persons).where(eq(persons.id, memberId));
+  } catch (e) {
+    console.error("Error deleting person:", e);
     return { error: "Đã xảy ra lỗi khi xoá hồ sơ." };
   }
 
-  // 4. Revalidate and redirect
   revalidatePath("/dashboard/members");
   redirect("/dashboard/members");
 }

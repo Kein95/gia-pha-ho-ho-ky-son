@@ -1,6 +1,8 @@
+import { db } from "@/lib/db";
+import { persons, customEvents } from "@/lib/db/schema";
+import { getIsAdmin } from "@/lib/auth/queries";
 import { getTodayLunar } from "@/utils/dateHelpers";
 import { computeEvents } from "@/utils/eventHelpers";
-import { getIsAdmin, getSupabase } from "@/utils/supabase/queries";
 import {
   ArrowRight,
   BarChart2,
@@ -15,7 +17,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-/* ── Event type helpers ───────────────────────────────────────────── */
 const eventTypeConfig = {
   birthday: {
     icon: Cake,
@@ -39,27 +40,43 @@ const eventTypeConfig = {
 
 export default async function DashboardLaunchpad() {
   const isAdmin = await getIsAdmin();
-  const supabase = await getSupabase();
 
-  /* ── Fetch events data ────────────────────────────────────────── */
-  const { data: persons } = await supabase
-    .from("persons")
-    .select(
-      "id, full_name, birth_year, birth_month, birth_day, death_year, death_month, death_day, death_lunar_year, death_lunar_month, death_lunar_day, is_deceased",
-    );
+  const [personsRows, eventsRows] = await Promise.all([
+    db
+      .select({
+        id: persons.id,
+        full_name: persons.fullName,
+        birth_year: persons.birthYear,
+        birth_month: persons.birthMonth,
+        birth_day: persons.birthDay,
+        death_year: persons.deathYear,
+        death_month: persons.deathMonth,
+        death_day: persons.deathDay,
+        death_lunar_year: persons.deathLunarYear,
+        death_lunar_month: persons.deathLunarMonth,
+        death_lunar_day: persons.deathLunarDay,
+        is_deceased: persons.isDeceased,
+      })
+      .from(persons),
+    db
+      .select({
+        id: customEvents.id,
+        name: customEvents.name,
+        content: customEvents.content,
+        event_date: customEvents.eventDate,
+        location: customEvents.location,
+        created_by: customEvents.createdBy,
+      })
+      .from(customEvents),
+  ]);
 
-  const { data: customEvents } = await supabase
-    .from("custom_events")
-    .select("id, name, content, event_date, location, created_by");
-
-  const allEvents = computeEvents(persons ?? [], customEvents ?? []);
+  const allEvents = computeEvents(personsRows, eventsRows);
   const upcomingEvents = allEvents.filter(
     (e) => e.daysUntil >= 0 && e.daysUntil <= 30,
   );
 
   const lunar = getTodayLunar();
 
-  /* ── Feature lists ────────────────────────────────────────────── */
   const publicFeatures = [
     {
       title: "Cây gia phả",
@@ -70,15 +87,6 @@ export default async function DashboardLaunchpad() {
       borderColor: "border-amber-200/60",
       hoverColor: "hover:border-amber-400 hover:shadow-amber-100",
     },
-    // {
-    //   title: "Sự kiện",
-    //   description: "Quản lý ngày giỗ, họp họ và các dịp quan trọng",
-    //   icon: <CalendarClock className="size-8 text-emerald-600" />,
-    //   href: "/dashboard/events",
-    //   bgColor: "bg-emerald-50",
-    //   borderColor: "border-emerald-200/60",
-    //   hoverColor: "hover:border-emerald-400 hover:shadow-emerald-100",
-    // },
     {
       title: "Tra cứu danh xưng",
       description: "Hệ thống gọi tên họ hàng chuẩn xác",
@@ -97,15 +105,6 @@ export default async function DashboardLaunchpad() {
       borderColor: "border-purple-200/60",
       hoverColor: "hover:border-purple-400 hover:shadow-purple-100",
     },
-    // {
-    //   title: "Giới thiệu & Liên hệ",
-    //   description: "Thông tin về ứng dụng và đội ngũ phát triển",
-    //   icon: <Info className="size-8 text-stone-600" />,
-    //   href: "/about",
-    //   bgColor: "bg-stone-50",
-    //   borderColor: "border-stone-200/60",
-    //   hoverColor: "hover:border-stone-400 hover:shadow-stone-100",
-    // },
   ];
 
   const adminFeatures = [
@@ -140,20 +139,14 @@ export default async function DashboardLaunchpad() {
 
   return (
     <main className="flex-1 flex flex-col p-4 sm:p-8 max-w-7xl mx-auto w-full">
-      {/* <div className="mb-8 sm:mb-12 text-center sm:text-left">
-        <h1 className="title">Bảng điều khiển</h1>
-      </div> */}
-
-      {/* ── Today's Date & Upcoming Events ─────────────────── */}
+      {/* Today + Upcoming Events */}
       <Link
         href="/dashboard/events"
         className="group relative block overflow-hidden rounded-3xl bg-white border border-stone-200/60 shadow-sm hover:shadow-stone-100 hover:border-stone-400 mb-10 transition-all duration-300 hover:-translate-y-1"
       >
-        {/* Subtle background flair */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-amber-50/50 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none opacity-50"></div>
 
         <div className="relative p-6 sm:p-8 flex flex-col md:flex-row gap-6 sm:gap-8 items-center">
-          {/* Date section */}
           <div className="md:w-[35%] w-full flex flex-col items-center md:items-start text-center md:text-left gap-4 md:border-r border-stone-100 md:pr-8">
             <div className="size-16 rounded-2xl bg-stone-50 flex items-center justify-center shrink-0 border border-stone-100 shadow-sm text-stone-600 transition-transform duration-500 group-hover:scale-105 group-hover:shadow-md group-hover:border-stone-200">
               <CalendarDays className="size-7" />
@@ -176,7 +169,6 @@ export default async function DashboardLaunchpad() {
             </div>
           </div>
 
-          {/* Events summary */}
           <div className="md:w-[65%] w-full flex-1">
             {upcomingEvents.length > 0 ? (
               <div className="space-y-4">
@@ -245,13 +237,9 @@ export default async function DashboardLaunchpad() {
         </div>
       </Link>
 
-      {/* ── Feature Grid ──────────────────────────────────── */}
+      {/* Feature Grid */}
       <div className="space-y-12">
         <section>
-          {/* <h3 className="text-xl font-serif font-bold text-stone-700 mb-6 flex items-center gap-2">
-            <span className="w-8 h-px bg-stone-300 rounded-full"></span>
-            Chức năng chung
-          </h3> */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {publicFeatures.map((feat) => (
               <Link

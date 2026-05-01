@@ -1,5 +1,14 @@
 -- ==========================================
--- GIAPHA-OS DATABASE SCHEMA
+-- ⚠️  DEPRECATED — REFERENCE ONLY (legacy Supabase schema)
+-- ==========================================
+-- Migration completed 2026-05-01: Supabase → Vercel Postgres (Neon) + Drizzle + Auth.js v5
+-- Source of truth from now on: lib/db/schema/*.ts (Drizzle schema)
+-- This file kept for historical reference của Supabase setup nguyên bản.
+-- KHÔNG dùng để khởi tạo database mới — dùng `bun run db:push` thay.
+-- ==========================================
+
+-- ==========================================
+-- GIAPHA-OS DATABASE SCHEMA (LEGACY)
 -- ==========================================
 
 -- EXTENSIONS

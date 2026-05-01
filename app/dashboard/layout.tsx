@@ -3,9 +3,9 @@ import DashboardHeader from "@/components/DashboardHeader";
 import Footer from "@/components/Footer";
 import LogoutButton from "@/components/LogoutButton";
 import { UserProvider } from "@/components/UserProvider";
-import { getProfile, getUser } from "@/utils/supabase/queries";
+import { getProfile } from "@/lib/auth/queries";
+import { requireAuth } from "@/lib/auth/permissions";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import React from "react";
 
 export default async function DashboardLayout({
@@ -13,15 +13,10 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
+  const user = await requireAuth();
   const profile = await getProfile(user.id);
 
-  if (!profile?.is_active) {
+  if (!profile?.isActive) {
     return (
       <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans">
         <header className="sticky top-0 z-30 bg-white/80 border-b border-stone-200 shadow-sm transition-all duration-200">
@@ -75,7 +70,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <UserProvider user={user} profile={profile}>
+    <UserProvider>
       <div className="min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans">
         <DashboardHeader />
         {children}

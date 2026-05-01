@@ -2,67 +2,84 @@ import { DashboardProvider } from "@/components/DashboardContext";
 import DashboardViews from "@/components/DashboardViews";
 import MemberDetailModal from "@/components/MemberDetailModal";
 import ViewToggle from "@/components/ViewToggle";
-import { getProfile, getSupabase } from "@/utils/supabase/queries";
+import { db } from "@/lib/db";
+import { persons, relationships } from "@/lib/db/schema";
+import { getProfile } from "@/lib/auth/queries";
+import { asc } from "drizzle-orm";
+import { Person, Relationship } from "@/types";
 
 interface PageProps {
   searchParams: Promise<{ view?: string; rootId?: string }>;
 }
+
 export default async function FamilyTreePage({ searchParams }: PageProps) {
   const { rootId } = await searchParams;
 
   const profile = await getProfile();
   const canEdit = profile?.role === "admin" || profile?.role === "editor";
 
-  // If view is list, we only need persons, not relationships.
-  // We fetch persons for all views to pass down as a prop if we want, or let components fetch.
-  // Actually, to make transitions fast and avoid duplicate fetching across components,
-  // we will fetch data here and pass it down as props.
-  const supabase = await getSupabase();
-
-  const [personsRes, relsRes] = await Promise.all([
-    supabase
-      .from("persons")
-      .select("*")
-      .order("birth_year", { ascending: true, nullsFirst: false }),
-    supabase.from("relationships").select("*"),
+  const [personsRows, relsRows] = await Promise.all([
+    db.select().from(persons).orderBy(asc(persons.birthYear)),
+    db.select().from(relationships),
   ]);
 
-  const persons = personsRes.data || [];
-  const relationships = relsRes.data || [];
+  // Map Drizzle camelCase → snake_case Person type for UI compatibility
+  const personsData: Person[] = personsRows.map((p) => ({
+    id: p.id,
+    full_name: p.fullName,
+    gender: p.gender,
+    birth_year: p.birthYear ?? null,
+    birth_month: p.birthMonth ?? null,
+    birth_day: p.birthDay ?? null,
+    death_year: p.deathYear ?? null,
+    death_month: p.deathMonth ?? null,
+    death_day: p.deathDay ?? null,
+    death_lunar_year: p.deathLunarYear ?? null,
+    death_lunar_month: p.deathLunarMonth ?? null,
+    death_lunar_day: p.deathLunarDay ?? null,
+    is_deceased: p.isDeceased,
+    is_in_law: p.isInLaw,
+    birth_order: p.birthOrder ?? null,
+    generation: p.generation ?? null,
+    other_names: p.otherNames ?? null,
+    avatar_url: p.avatarUrl ?? null,
+    note: p.note ?? null,
+    created_at: p.createdAt.toISOString(),
+    updated_at: p.updatedAt.toISOString(),
+  }));
 
-  // Prepare map and roots for tree views
-  const personsMap = new Map();
-  persons.forEach((p) => personsMap.set(p.id, p));
+  const relationshipsData: Relationship[] = relsRows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    person_a: r.personA,
+    person_b: r.personB,
+    note: r.note ?? null,
+    created_at: r.createdAt.toISOString(),
+    updated_at: r.updatedAt.toISOString(),
+  }));
 
+  // Determine tree root
+  const personsMap = new Map(personsData.map((p) => [p.id, p]));
   const childIds = new Set(
-    relationships
-      .filter(
-        (r) => r.type === "biological_child" || r.type === "adopted_child",
-      )
+    relationshipsData
+      .filter((r) => r.type === "biological_child" || r.type === "adopted_child")
       .map((r) => r.person_b),
   );
 
   let finalRootId = rootId;
-
-  // If no rootId is provided, fallback to the earliest created person
   if (!finalRootId || !personsMap.has(finalRootId)) {
-    const rootsFallback = persons.filter((p) => !childIds.has(p.id));
-    if (rootsFallback.length > 0) {
-      finalRootId = rootsFallback[0].id;
-    } else if (persons.length > 0) {
-      finalRootId = persons[0].id; // ultimate fallback
-    }
+    const roots = personsData.filter((p) => !childIds.has(p.id));
+    finalRootId = roots[0]?.id ?? personsData[0]?.id;
   }
 
   return (
     <DashboardProvider>
       <ViewToggle />
       <DashboardViews
-        persons={persons}
-        relationships={relationships}
+        persons={personsData}
+        relationships={relationshipsData}
         canEdit={canEdit}
       />
-
       <MemberDetailModal />
     </DashboardProvider>
   );

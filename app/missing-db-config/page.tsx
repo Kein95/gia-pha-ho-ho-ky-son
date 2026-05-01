@@ -8,7 +8,6 @@ import Link from "next/link";
 export default function MissingDBConfigPage() {
   return (
     <div className="min-h-screen flex flex-col bg-[#fafaf9] select-none selection:bg-amber-200 selection:text-amber-900 relative overflow-hidden">
-      {/* Decorative background grid and blurs */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-size-[24px_24px] pointer-events-none"></div>
       <div className="absolute top-0 inset-x-0 h-screen overflow-hidden pointer-events-none flex justify-center">
         <div className="absolute top-[-10%] right-[-5%] w-[50vw] h-[50vw] max-w-[600px] max-h-[600px] bg-red-300/20 rounded-full blur-[100px] mix-blend-multiply" />
@@ -32,7 +31,7 @@ export default function MissingDBConfigPage() {
               </h2>
               <p className="text-stone-500 font-medium">
                 Ứng dụng hiện chưa được cấu hình biến môi trường kết nối đến
-                Supabase.
+                Vercel Postgres.
               </p>
             </div>
           </div>
@@ -48,21 +47,23 @@ export default function MissingDBConfigPage() {
                 <li className="leading-relaxed">
                   Đăng nhập vào{" "}
                   <a
-                    href="https://supabase.com/dashboard/project/_/settings/api"
+                    href="https://vercel.com/dashboard"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-amber-600 font-semibold hover:underline"
                   >
-                    Supabase Dashboard
-                  </a>
-                  .
+                    Vercel Dashboard
+                  </a>{" "}
+                  và mở project của bạn.
                 </li>
                 <li className="leading-relaxed">
-                  Lấy thông tin <b>Project URL</b> và{" "}
-                  <b>Project API Keys (anon public)</b>.
+                  Vào <b>Settings → Environment Variables</b> và kiểm tra các
+                  biến <b>POSTGRES_URL</b> và <b>AUTH_SECRET</b> đã được thêm
+                  chưa.
                 </li>
                 <li className="leading-relaxed">
-                  Tạo file <code>.env.local</code> ở thư mục gốc của dự án.
+                  Tạo file <code>.env.local</code> ở thư mục gốc của dự án nếu
+                  chạy local.
                 </li>
                 <li className="leading-relaxed">
                   Thêm cấu hình sau vào file:
@@ -70,14 +71,15 @@ export default function MissingDBConfigPage() {
                     <Terminal className="size-5 text-stone-400 shrink-0 mt-0.5" />
                     <pre>
                       <code>
-                        {`NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your_supabase_anon_key`}
+                        {`POSTGRES_URL=your_neon_postgres_url
+AUTH_SECRET=your_auth_secret_key
+BLOB_READ_WRITE_TOKEN=your_vercel_blob_token`}
                       </code>
                     </pre>
                   </div>
                 </li>
                 <li className="leading-relaxed">
-                  Khởi động lại server: <code>npm run dev</code> (hoặc bun dev).
+                  Khởi động lại server: <code>bun dev</code>.
                 </li>
               </ol>
             </div>

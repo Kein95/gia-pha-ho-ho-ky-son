@@ -1,86 +1,72 @@
 "use server";
 
+import {
+  getAdminUsers,
+  setUserRole,
+  deleteUser as _deleteUser,
+  adminCreateUser as _adminCreateUser,
+  setUserActiveStatus,
+} from "@/lib/auth/admin-actions";
 import { UserRole } from "@/types";
-import { getSupabase } from "@/utils/supabase/queries";
 import { revalidatePath } from "next/cache";
 
+export async function listAdminUsers() {
+  return getAdminUsers();
+}
+
 export async function changeUserRole(userId: string, newRole: UserRole) {
-  const supabase = await getSupabase();
-  const { error } = await supabase.rpc("set_user_role", {
-    target_user_id: userId,
-    new_role: newRole,
-  });
-
-  if (error) {
-    console.error("Failed to change user role:", error);
-    return { error: error.message };
+  try {
+    await setUserRole(userId, newRole);
+    revalidatePath("/dashboard/users");
+    return { success: true };
+  } catch (e) {
+    console.error("Failed to change user role:", e);
+    return { error: (e as Error).message ?? "Không thể thay đổi vai trò." };
   }
-
-  revalidatePath("/dashboard/users");
-  return { success: true };
 }
 
 export async function deleteUser(userId: string) {
-  const supabase = await getSupabase();
-  const { error } = await supabase.rpc("delete_user", {
-    target_user_id: userId,
-  });
-
-  if (error) {
-    console.error("Failed to delete user:", error);
-    return { error: error.message };
+  try {
+    await _deleteUser(userId);
+    revalidatePath("/dashboard/users");
+    return { success: true };
+  } catch (e) {
+    console.error("Failed to delete user:", e);
+    return { error: (e as Error).message ?? "Không thể xoá người dùng." };
   }
-
-  revalidatePath("/dashboard/users");
-  return { success: true };
 }
 
 export async function adminCreateUser(formData: FormData) {
   const email = formData.get("email")?.toString();
   const password = formData.get("password")?.toString();
-  const role = formData.get("role")?.toString() || "member";
-
-  if (role !== "admin" && role !== "editor" && role !== "member") {
-    return { error: "Vai trò không hợp lệ." };
-  }
-
+  const role = (formData.get("role")?.toString() ?? "member") as UserRole;
   const isActiveStr = formData.get("is_active")?.toString();
-  const isActive = isActiveStr === "false" ? false : true;
+  const isActive = isActiveStr !== "false";
 
   if (!email || !password) {
     return { error: "Email và mật khẩu là bắt buộc." };
   }
-
-  const supabase = await getSupabase();
-
-  const { error } = await supabase.rpc("admin_create_user", {
-    new_email: email,
-    new_password: password,
-    new_role: role,
-    new_active: isActive,
-  });
-
-  if (error) {
-    console.error("Failed to create user:", error);
-    return { error: error.message };
+  if (role !== "admin" && role !== "editor" && role !== "member") {
+    return { error: "Vai trò không hợp lệ." };
   }
 
-  revalidatePath("/dashboard/users");
-  return { success: true };
+  try {
+    await _adminCreateUser({ email, password, role, isActive });
+    revalidatePath("/dashboard/users");
+    return { success: true };
+  } catch (e) {
+    console.error("Failed to create user:", e);
+    return { error: (e as Error).message ?? "Không thể tạo người dùng." };
+  }
 }
 
 export async function toggleUserStatus(userId: string, newStatus: boolean) {
-  const supabase = await getSupabase();
-  const { error } = await supabase.rpc("set_user_active_status", {
-    target_user_id: userId,
-    new_status: newStatus,
-  });
-
-  if (error) {
-    console.error("Failed to change user status:", error);
-    return { error: error.message };
+  try {
+    await setUserActiveStatus(userId, newStatus);
+    revalidatePath("/dashboard/users");
+    return { success: true };
+  } catch (e) {
+    console.error("Failed to change user status:", e);
+    return { error: (e as Error).message ?? "Không thể thay đổi trạng thái." };
   }
-
-  revalidatePath("/dashboard/users");
-  return { success: true };
 }

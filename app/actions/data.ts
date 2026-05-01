@@ -1,16 +1,14 @@
 "use server";
 
+import { db } from "@/lib/db";
+import { persons, relationships } from "@/lib/db/schema";
+import { requireAdmin } from "@/lib/auth/permissions";
 import { Relationship } from "@/types";
-import { getIsAdmin, getSupabase } from "@/utils/supabase/queries";
+import { asc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/**
- * Payload shape cho file backup JSON.
- * Các field DB-managed (created_at, updated_at) được giữ để tham khảo
- * nhưng sẽ bị loại bỏ khi import lại.
- */
 interface PersonExport {
   id: string;
   full_name: string;
@@ -28,7 +26,6 @@ interface PersonExport {
   other_names: string | null;
   avatar_url: string | null;
   note: string | null;
-  // DB-managed fields (kept in export for traceability, stripped on import)
   created_at?: string;
   updated_at?: string;
 }
@@ -51,7 +48,6 @@ interface BackupPayload {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Các field được phép insert vào bảng persons (loại bỏ created_at/updated_at)
 function sanitizePerson(
   p: PersonExport,
 ): Omit<PersonExport, "created_at" | "updated_at"> {
@@ -90,169 +86,188 @@ function sanitizeRelationship(
 export async function exportData(
   exportRootId?: string,
 ): Promise<BackupPayload | { error: string }> {
-  const isAdmin = await getIsAdmin();
-  if (!isAdmin) {
+  try {
+    await requireAdmin();
+  } catch {
     return { error: "Từ chối truy cập. Chỉ admin mới có quyền này." };
   }
 
-  const supabase = await getSupabase();
+  try {
+    const allPersonsRaw = await db
+      .select()
+      .from(persons)
+      .orderBy(asc(persons.createdAt));
 
-  // Fetch ALL persons and relationships first to perform traversal in memory.
-  // This is safe since typical family trees are < 10,000 nodes, easily fitting in memory.
-  const { data: allPersons, error: personsError } = await supabase
-    .from("persons")
-    .select(
-      "id, full_name, gender, birth_year, birth_month, birth_day, death_year, death_month, death_day, is_deceased, is_in_law, birth_order, generation, other_names, avatar_url, note, created_at, updated_at",
-    )
-    .order("created_at", { ascending: true });
+    const allRelsRaw = await db
+      .select()
+      .from(relationships)
+      .orderBy(asc(relationships.createdAt));
 
-  if (personsError)
-    return { error: "Lỗi tải dữ liệu persons: " + personsError.message };
+    // Map Drizzle camelCase → snake_case for export format (matches legacy backup schema)
+    let exportPersons: PersonExport[] = allPersonsRaw.map((p) => ({
+      id: p.id,
+      full_name: p.fullName,
+      gender: p.gender,
+      birth_year: p.birthYear,
+      birth_month: p.birthMonth,
+      birth_day: p.birthDay,
+      death_year: p.deathYear,
+      death_month: p.deathMonth,
+      death_day: p.deathDay,
+      is_deceased: p.isDeceased,
+      is_in_law: p.isInLaw,
+      birth_order: p.birthOrder,
+      generation: p.generation,
+      other_names: p.otherNames,
+      avatar_url: p.avatarUrl,
+      note: p.note,
+      created_at: p.createdAt.toISOString(),
+      updated_at: p.updatedAt.toISOString(),
+    }));
 
-  const { data: allRels, error: relationshipsError } = await supabase
-    .from("relationships")
-    .select("id, type, person_a, person_b, created_at, updated_at")
-    .order("created_at", { ascending: true });
+    let exportRels: RelationshipExport[] = allRelsRaw.map((r) => ({
+      id: r.id,
+      type: r.type,
+      person_a: r.personA,
+      person_b: r.personB,
+      created_at: r.createdAt.toISOString(),
+      updated_at: r.updatedAt.toISOString(),
+    }));
 
-  if (relationshipsError)
+    // Optional subtree filter
+    if (exportRootId && exportPersons.some((p) => p.id === exportRootId)) {
+      const includedIds = new Set<string>([exportRootId]);
+
+      const findDescendants = (parentId: string) => {
+        exportRels
+          .filter(
+            (r) =>
+              (r.type === "biological_child" || r.type === "adopted_child") &&
+              r.person_a === parentId,
+          )
+          .forEach((r) => {
+            if (!includedIds.has(r.person_b)) {
+              includedIds.add(r.person_b);
+              findDescendants(r.person_b);
+            }
+          });
+      };
+      findDescendants(exportRootId);
+
+      // Add spouses of everyone in tree
+      Array.from(includedIds).forEach((pid) => {
+        exportRels
+          .filter(
+            (r) =>
+              r.type === "marriage" &&
+              (r.person_a === pid || r.person_b === pid),
+          )
+          .forEach((r) => {
+            includedIds.add(r.person_a === pid ? r.person_b : r.person_a);
+          });
+      });
+
+      exportPersons = exportPersons.filter((p) => includedIds.has(p.id));
+      exportRels = exportRels.filter(
+        (r) => includedIds.has(r.person_a) && includedIds.has(r.person_b),
+      );
+    }
+
     return {
-      error: "Lỗi tải dữ liệu relationships: " + relationshipsError.message,
+      version: 2,
+      timestamp: new Date().toISOString(),
+      persons: exportPersons,
+      relationships: exportRels,
     };
-
-  let exportPersons = (allPersons ?? []) as PersonExport[];
-  let exportRels = (allRels ?? []) as RelationshipExport[];
-
-  // If a root person is selected, filter the export to only their subtree
-  if (exportRootId && exportPersons.some((p) => p.id === exportRootId)) {
-    const includedPersonIds = new Set<string>([exportRootId]);
-
-    // 1. Traverse biological and adopted children recursively
-    const findDescendants = (parentId: string) => {
-      exportRels
-        .filter(
-          (r) =>
-            (r.type === "biological_child" || r.type === "adopted_child") &&
-            r.person_a === parentId,
-        )
-        .forEach((r) => {
-          if (!includedPersonIds.has(r.person_b)) {
-            includedPersonIds.add(r.person_b);
-            findDescendants(r.person_b);
-          }
-        });
-    };
-    findDescendants(exportRootId);
-
-    // 2. Add spouses for everyone in the tree so far
-    const descendantsArray = Array.from(includedPersonIds); // snapshot current members
-    descendantsArray.forEach((personId) => {
-      exportRels
-        .filter(
-          (r) =>
-            r.type === "marriage" &&
-            (r.person_a === personId || r.person_b === personId),
-        )
-        .forEach((r) => {
-          const spouseId = r.person_a === personId ? r.person_b : r.person_a;
-          includedPersonIds.add(spouseId);
-        });
-    });
-
-    // 3. Filter the payload
-    exportPersons = exportPersons.filter((p) => includedPersonIds.has(p.id));
-    exportRels = exportRels.filter(
-      (r) =>
-        includedPersonIds.has(r.person_a) && includedPersonIds.has(r.person_b),
-    );
+  } catch (e) {
+    console.error("Export error:", e);
+    return { error: "Lỗi khi xuất dữ liệu: " + (e as Error).message };
   }
-
-  return {
-    version: 2, // bumped for schema with birth_order + generation
-    timestamp: new Date().toISOString(),
-    persons: exportPersons,
-    relationships: exportRels,
-  };
 }
 
 // ─── Import ───────────────────────────────────────────────────────────────────
 
-export async function importData(
-  importPayload:
-    | BackupPayload
-    | {
-        persons: PersonExport[];
-        relationships: Relationship[];
-      },
-) {
-  const isAdmin = await getIsAdmin();
-  if (!isAdmin) {
+export async function importData(importPayload: {
+  persons: PersonExport[];
+  relationships: Relationship[] | RelationshipExport[];
+}) {
+  try {
+    await requireAdmin();
+  } catch {
     return { error: "Từ chối truy cập. Chỉ admin mới có quyền này." };
   }
-
-  const supabase = await getSupabase();
 
   if (!importPayload?.persons || !importPayload?.relationships) {
     return { error: "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại file JSON." };
   }
 
   if (importPayload.persons.length === 0) {
+    return { error: "File backup trống — không có thành viên nào để phục hồi." };
+  }
+
+  try {
+    // 1. Delete relationships first (FK constraint)
+    await db.delete(relationships);
+
+    // 2. Delete persons
+    await db.delete(persons);
+
+    // 3. Insert persons in chunks (Drizzle values() accepts array)
+    const CHUNK = 200;
+    const sanitizedPersons = importPayload.persons.map(sanitizePerson);
+
+    for (let i = 0; i < sanitizedPersons.length; i += CHUNK) {
+      const chunk = sanitizedPersons.slice(i, i + CHUNK);
+      // Map snake_case export format → Drizzle camelCase schema fields
+      await db.insert(persons).values(
+        chunk.map((p) => ({
+          id: p.id,
+          fullName: p.full_name,
+          gender: p.gender,
+          birthYear: p.birth_year,
+          birthMonth: p.birth_month,
+          birthDay: p.birth_day,
+          deathYear: p.death_year,
+          deathMonth: p.death_month,
+          deathDay: p.death_day,
+          isDeceased: p.is_deceased,
+          isInLaw: p.is_in_law,
+          birthOrder: p.birth_order,
+          generation: p.generation,
+          otherNames: p.other_names,
+          avatarUrl: p.avatar_url,
+          note: p.note,
+        })),
+      );
+    }
+
+    // 4. Insert relationships in chunks
+    const sanitizedRels = importPayload.relationships.map(sanitizeRelationship);
+
+    for (let i = 0; i < sanitizedRels.length; i += CHUNK) {
+      const chunk = sanitizedRels.slice(i, i + CHUNK);
+      await db.insert(relationships).values(
+        chunk.map((r) => ({
+          type: r.type as "marriage" | "biological_child" | "adopted_child",
+          personA: r.person_a,
+          personB: r.person_b,
+        })),
+      );
+    }
+
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/members");
+    revalidatePath("/dashboard/data");
+
     return {
-      error: "File backup trống — không có thành viên nào để phục hồi.",
+      success: true,
+      imported: {
+        persons: sanitizedPersons.length,
+        relationships: sanitizedRels.length,
+      },
     };
+  } catch (e) {
+    console.error("Import error:", e);
+    return { error: "Lỗi khi import dữ liệu: " + (e as Error).message };
   }
-
-  // 1. Xoá relationships trước (FK constraint)
-  const { error: delRelError } = await supabase
-    .from("relationships")
-    .delete()
-    .neq("id", "00000000-0000-0000-0000-000000000000");
-
-  if (delRelError)
-    return { error: "Lỗi khi xoá relationships cũ: " + delRelError.message };
-
-  // 2. Xoá persons
-  const { error: delPersonsError } = await supabase
-    .from("persons")
-    .delete()
-    .neq("id", "00000000-0000-0000-0000-000000000000");
-
-  if (delPersonsError)
-    return { error: "Lỗi khi xoá persons cũ: " + delPersonsError.message };
-
-  // 3. Insert persons (sanitized — chỉ giữ các field schema hiện tại)
-  const CHUNK = 200;
-  const persons = importPayload.persons.map(sanitizePerson);
-
-  for (let i = 0; i < persons.length; i += CHUNK) {
-    const chunk = persons.slice(i, i + CHUNK);
-    const { error } = await supabase.from("persons").insert(chunk);
-    if (error)
-      return {
-        error: `Lỗi khi import persons (chunk ${i / CHUNK + 1}): ${error.message}`,
-      };
-  }
-
-  // 4. Insert relationships (stripped of id/created_at to avoid conflicts)
-  const relationships = importPayload.relationships.map(sanitizeRelationship);
-
-  for (let i = 0; i < relationships.length; i += CHUNK) {
-    const chunk = relationships.slice(i, i + CHUNK);
-    const { error } = await supabase.from("relationships").insert(chunk);
-    if (error)
-      return {
-        error: `Lỗi khi import relationships (chunk ${i / CHUNK + 1}): ${error.message}`,
-      };
-  }
-
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/members");
-  revalidatePath("/dashboard/data");
-
-  return {
-    success: true,
-    imported: {
-      persons: persons.length,
-      relationships: relationships.length,
-    },
-  };
 }

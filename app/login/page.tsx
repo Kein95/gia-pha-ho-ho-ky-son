@@ -2,19 +2,12 @@
 
 import config from "@/app/config";
 import Footer from "@/components/Footer";
-import { createClient } from "@/utils/supabase/client";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  ArrowLeft,
-  Info,
-  KeyRound,
-  Mail,
-  Shield,
-  UserPlus,
-} from "lucide-react";
+import { ArrowLeft, Info, KeyRound, Mail, Shield } from "lucide-react";
 import Link from "next/link";
+import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -22,6 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -34,89 +28,27 @@ export default function LoginPage() {
     }
   }, []);
 
-  const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
-
-  const [isLogin, setIsLogin] = useState(true);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [confirmPassword, setConfirmPassword] = useState("");
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    setSuccessMessage(null);
 
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
 
-        if (error) {
-          setError(error.message);
-        } else {
-          router.push("/dashboard");
-          router.refresh();
-        }
+      if (result?.error) {
+        setError("Email hoặc mật khẩu không đúng. Vui lòng thử lại.");
       } else {
-        if (password !== confirmPassword) {
-          setError("Mật khẩu xác nhận không khớp.");
-          setLoading(false);
-          return;
-        }
-
-        // 1. Try to sign up
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-
-        if (error) {
-          // Check if error is related to missing database schema/tables
-          if (
-            error.message.includes("relation") &&
-            error.message.includes("does not exist")
-          ) {
-            router.push("/setup");
-            return;
-          }
-
-          setError(error.message);
-        } else if (data.user?.identities && data.user.identities.length === 0) {
-          setError(
-            "Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.",
-          );
-        } else {
-          if (data.session) {
-            router.push("/dashboard");
-            router.refresh();
-          } else {
-            // Attempt to sign in immediately (catches auto-confirmed first admin)
-            const { data: signInData, error: signInError } =
-              await supabase.auth.signInWithPassword({
-                email,
-                password,
-              });
-
-            if (!signInError && signInData.session) {
-              router.push("/dashboard");
-              router.refresh();
-            } else {
-              setSuccessMessage(
-                "Đăng ký thành công! Vui lòng chờ admin kích hoạt tài khoản để xem nội dung.",
-              );
-              setIsLogin(true); // Switch back to login view
-              setConfirmPassword(""); // clear confirm password
-              setPassword(""); // clear password
-            }
-          }
-        }
+        router.push("/dashboard");
+        router.refresh();
       }
     } catch (err) {
-      setError("An unexpected error occurred");
       console.error(err);
+      setError("Đã xảy ra lỗi hệ thống. Vui lòng thử lại.");
     } finally {
       setLoading(false);
     }
@@ -124,7 +56,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fafaf9] select-none selection:bg-amber-200 selection:text-amber-900 relative overflow-hidden">
-      {/* Decorative background grid and blurs */}
+      {/* Decorative background */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-size-[24px_24px] pointer-events-none"></div>
       <div className="absolute inset-0 bg-[radial-gradient(circle_800px_at_50%_-30%,#fef3c7,transparent)] pointer-events-none"></div>
 
@@ -150,12 +82,10 @@ export default function LoginPage() {
               <Shield className="size-8 text-amber-600" />
             </Link>
             <h2 className="text-3xl sm:text-4xl font-serif font-bold text-stone-900 tracking-tight">
-              {isLogin ? "Đăng nhập" : "Đăng ký"}
+              Đăng nhập
             </h2>
             <p className="mt-3 text-sm text-stone-500 font-medium tracking-wide">
-              {isLogin
-                ? "Đăng nhập để truy cập gia phả."
-                : "Tạo tài khoản thành viên mới."}
+              Đăng nhập để truy cập gia phả.
             </p>
             {isDemo && (
               <motion.div
@@ -208,7 +138,7 @@ export default function LoginPage() {
                     id="password"
                     name="password"
                     type="password"
-                    autoComplete={isLogin ? "current-password" : "new-password"}
+                    autoComplete="current-password"
                     required
                     className="bg-white/50 text-stone-900 placeholder-stone-400 block w-full rounded-xl border border-stone-200/80 shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] focus:border-amber-400 focus:ring-amber-400 focus:bg-white pl-11 pr-4 py-3.5 transition-all duration-200 outline-none"
                     placeholder="Nhập mật khẩu"
@@ -217,39 +147,6 @@ export default function LoginPage() {
                   />
                 </div>
               </div>
-
-              <AnimatePresence>
-                {!isLogin && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                    animate={{ opacity: 1, height: "auto", marginTop: 16 }}
-                    exit={{ opacity: 0, height: 0, marginTop: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="relative overflow-hidden"
-                  >
-                    <label
-                      htmlFor="confirmPassword"
-                      className="block text-[13px] font-semibold text-stone-600 mb-1.5 ml-1"
-                    >
-                      Xác nhận mật khẩu
-                    </label>
-                    <div className="relative flex items-center group">
-                      <KeyRound className="absolute left-3.5 size-5 text-stone-400 group-focus-within:text-amber-500 transition-colors" />
-                      <input
-                        id="confirmPassword"
-                        name="confirmPassword"
-                        type="password"
-                        autoComplete="new-password"
-                        required={!isLogin}
-                        className="bg-white/50 text-stone-900 placeholder-stone-400 block w-full rounded-xl border border-stone-200/80 shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] focus:border-amber-400 focus:ring-amber-400 focus:bg-white pl-11 pr-4 py-3.5 transition-all duration-200 outline-none"
-                        placeholder="Nhập lại mật khẩu"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                      />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
 
             <AnimatePresence>
@@ -261,17 +158,6 @@ export default function LoginPage() {
                   className="text-red-700 text-[13px] text-center bg-red-50 p-3 rounded-xl border border-red-100/50 font-medium"
                 >
                   {error}
-                </motion.div>
-              )}
-
-              {successMessage && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10, height: 0 }}
-                  animate={{ opacity: 1, y: 0, height: "auto" }}
-                  exit={{ opacity: 0, y: -10, height: 0 }}
-                  className="text-teal-700 text-[13px] text-center bg-teal-50 p-3 rounded-xl border border-teal-100/50 font-medium"
-                >
-                  {successMessage}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -306,40 +192,16 @@ export default function LoginPage() {
                     Đang xử lý...
                   </span>
                 ) : (
-                  <>
-                    {isLogin ? "Đăng nhập" : "Tạo tài khoản"}
-                    {!isLogin && <UserPlus className="size-4 ml-1" />}
-                  </>
+                  "Đăng nhập"
                 )}
               </button>
 
-              <div className="relative flex items-center py-2 opacity-60">
-                <div className="grow border-t border-stone-200"></div>
-                <span className="shrink-0 mx-4 text-stone-400 text-[11px] uppercase tracking-wider font-bold">
-                  Hoặc
+              <p className="text-center text-sm text-stone-500 font-medium pt-2">
+                Chưa có tài khoản?{" "}
+                <span className="text-stone-700 font-semibold">
+                  Liên hệ quản trị viên để được cấp quyền truy cập.
                 </span>
-                <div className="grow border-t border-stone-200"></div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (isLogin && isDemo) {
-                    setError(
-                      "Đây là trang demo, bạn không cần phải tạo tài khoản. Hãy sử dụng tài khoản demo để truy cập với toàn bộ quyền.",
-                    );
-                    return;
-                  }
-                  setIsLogin(!isLogin);
-                  setError(null);
-                  setSuccessMessage(null);
-                }}
-                className="w-full text-sm font-semibold text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-50 border border-stone-200/80 py-3.5 rounded-xl shadow-[0_2px_8px_-3px_rgba(0,0,0,0.05)] focus:outline-none transition-all duration-200"
-              >
-                {isLogin
-                  ? "Chưa có tài khoản? Đăng ký ngay"
-                  : "Đã có tài khoản? Đăng nhập"}
-              </button>
+              </p>
             </div>
           </form>
         </motion.div>

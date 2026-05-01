@@ -2,6 +2,7 @@
 
 import MemberDetailContent from "@/components/MemberDetailContent";
 import MemberForm from "@/components/MemberForm";
+import { getPersonById, getPersonPrivateDetails } from "@/app/actions/relationship";
 import { Person } from "@/types";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, ArrowLeft, Edit2, ExternalLink, X } from "lucide-react";
@@ -18,7 +19,7 @@ export default function MemberDetailModal() {
     showCreateMember,
     setShowCreateMember,
   } = useDashboard();
-  const { isAdmin, isEditor: canEdit, supabase } = useUser();
+  const { isAdmin, isEditor: canEdit } = useUser();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -27,10 +28,7 @@ export default function MemberDetailModal() {
   const [error, setError] = useState<string | null>(null);
 
   const [person, setPerson] = useState<Person | null>(null);
-  const [privateData, setPrivateData] = useState<Record<
-    string,
-    unknown
-  > | null>(null);
+  const [privateData, setPrivateData] = useState<Record<string, unknown> | null>(null);
 
   const closeModal = () => {
     setMemberModalId(null);
@@ -43,45 +41,45 @@ export default function MemberDetailModal() {
       setLoading(true);
       setError(null);
       try {
-        // 1. Fetch Person Public Data
-        const { data: personData, error: personError } = await supabase
-          .from("persons")
-          .select("*")
-          .eq("id", id)
-          .single();
-
-        if (personError || !personData) {
-          throw new Error("Không thể tải thông tin thành viên.");
-        }
+        const personData = await getPersonById(id);
+        if (!personData) throw new Error("Không thể tải thông tin thành viên.");
         setPerson(personData);
 
-        // 2. Fetch Private Data if Admin
         if (isAdmin) {
-          const { data: privData } = await supabase
-            .from("person_details_private")
-            .select("*")
-            .eq("person_id", id)
-            .single();
-          setPrivateData(privData || {});
+          try {
+            const privData = await getPersonPrivateDetails(id);
+            setPrivateData(
+              privData
+                ? {
+                    phone_number: privData.phoneNumber,
+                    occupation: privData.occupation,
+                    current_residence: privData.currentResidence,
+                  }
+                : {},
+            );
+          } catch {
+            // Non-critical: private data fetch may fail if not admin
+            setPrivateData(null);
+          }
         } else {
           setPrivateData(null);
         }
       } catch (err) {
         console.error("Error fetching member details:", err);
-        // @ts-expect-error - err is caught as unknown, but we check for message
-        setError(err?.message || "Đã xảy ra lỗi hệ thống.");
+        setError(
+          (err as Error)?.message || "Đã xảy ra lỗi hệ thống.",
+        );
       } finally {
         setLoading(false);
       }
     },
-    [isAdmin, supabase],
+    [isAdmin],
   );
 
-  // Sync state with URL parameter or create mode
   useEffect(() => {
     if (memberId) {
       setIsOpen(true);
-      setIsEditing(false); // always start on detail view when opening
+      setIsEditing(false);
       fetchData(memberId);
     } else if (showCreateMember) {
       setIsOpen(true);
@@ -100,7 +98,6 @@ export default function MemberDetailModal() {
     }
   }, [memberId, showCreateMember, fetchData]);
 
-  // Prevent background scrolling when modal is open
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -112,30 +109,20 @@ export default function MemberDetailModal() {
     };
   }, [isOpen]);
 
-  // Called by MemberForm after a successful save
   const handleEditSuccess = (savedPersonId: string) => {
-    // Clear stale data first so the loading state is shown while refetching
     setIsEditing(false);
     setPerson(null);
     setPrivateData(null);
     fetchData(savedPersonId);
-    // Revalidate Next.js server component cache so the dashboard list/members updates
     router.refresh();
   };
 
-  // Called by MemberForm after a successful CREATE
   const handleCreateSuccess = (savedPersonId: string) => {
     setShowCreateMember(false);
-    // Open the detail modal for the new member
     setMemberModalId(savedPersonId);
-    // Delay refresh so React commits state changes first,
-    // ensuring the server component re-fetches the updated member list.
-    setTimeout(() => {
-      router.refresh();
-    }, 100);
+    setTimeout(() => router.refresh(), 100);
   };
 
-  // initialData for MemberForm — merge public + private
   const formInitialData = person
     ? { ...person, ...(privateData ?? {}) }
     : undefined;
@@ -150,7 +137,6 @@ export default function MemberDetailModal() {
           transition={{ duration: 0.2 }}
           className="fixed inset-0 z-100 flex items-center justify-center p-4 sm:p-6 bg-stone-900/40 backdrop-blur-sm"
         >
-          {/* Click-away backdrop (disabled while editing/creating to avoid accidental close) */}
           {!isEditing && !showCreateMember && (
             <div
               className="absolute inset-0 cursor-pointer"
@@ -158,7 +144,6 @@ export default function MemberDetailModal() {
             />
           )}
 
-          {/* Modal Content */}
           <motion.div
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -166,14 +151,11 @@ export default function MemberDetailModal() {
             transition={{ type: "spring", stiffness: 350, damping: 25 }}
             className="relative bg-white/95 backdrop-blur-2xl rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-stone-200"
           >
-            {/* Sticky Header Actions */}
+            {/* Header actions */}
             <div className="absolute top-4 right-4 sm:top-5 sm:right-5 z-20 flex items-center gap-2">
               {isEditing ? (
-                /* In edit mode — show back button */
                 <button
-                  onClick={() => {
-                    setIsEditing(false);
-                  }}
+                  onClick={() => setIsEditing(false)}
                   className="flex items-center gap-1.5 px-4 py-2 bg-stone-100/80 text-stone-700 rounded-full hover:bg-stone-200 font-semibold text-sm shadow-sm border border-stone-200/50 transition-colors"
                 >
                   <ArrowLeft className="size-4" />
@@ -228,16 +210,13 @@ export default function MemberDetailModal() {
                 </button>
               </div>
             ) : isEditing && formInitialData ? (
-              /* ── EDIT MODE ── */
               <div className="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-8 pt-16 pb-8">
                 <h2 className="text-xl font-serif font-bold text-stone-800 mb-6">
                   Chỉnh sửa thành viên
                 </h2>
                 <MemberForm
                   initialData={
-                    formInitialData as Parameters<
-                      typeof MemberForm
-                    >[0]["initialData"]
+                    formInitialData as Parameters<typeof MemberForm>[0]["initialData"]
                   }
                   isEditing={true}
                   isAdmin={isAdmin}
@@ -246,7 +225,6 @@ export default function MemberDetailModal() {
                 />
               </div>
             ) : showCreateMember ? (
-              /* ── CREATE MODE ── */
               <div className="flex-1 overflow-y-auto custom-scrollbar px-4 sm:px-8 pt-16 pb-8">
                 <h2 className="text-xl font-serif font-bold text-stone-800 mb-6">
                   Thêm thành viên mới
@@ -258,7 +236,6 @@ export default function MemberDetailModal() {
                 />
               </div>
             ) : person ? (
-              /* ── DETAIL MODE ── */
               <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <MemberDetailContent
                   person={person}
